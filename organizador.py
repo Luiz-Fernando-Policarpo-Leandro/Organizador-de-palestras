@@ -1,5 +1,4 @@
 import re
-import datetime
 
 class Palestra:
     def __init__(self, titulo, duracao_minutos):
