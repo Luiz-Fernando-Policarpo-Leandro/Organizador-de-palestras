@@ -1,19 +1,21 @@
 import re
+import datetime
 
 class Palestra:
     def __init__(self, titulo, duracao_minutos):
         self.titulo = titulo
         self.duracao = duracao_minutos
-        self.hora_inicio = None # Hora definida no agendamento
+        self.hora_inicio = None  # Hora definida no agendamento
 
     def __repr__(self):
         return f"Palestra(Titulo='{self.titulo}', Duracao={self.duracao}min)"
 
+
 class OrganizadorConferencia:
-    def __init__(self):
-        self.filepath = "proposals.txt"
-        self.propostas = []  # Palestras a serem agendadas
-        self.cronograma = [] # Cronograma final organizado em trilhas
+    def __init__(self, filepath="proposals.txt"):
+        self.filepath = filepath
+        self.propostas = []   # Palestras a serem agendadas
+        self.cronograma = []  # Cronograma final organizado em trilhas
 
         # Horários fixos da conferência em minutos
         self.INICIO_MANHA = 9 * 60
@@ -27,12 +29,12 @@ class OrganizadorConferencia:
         return f"{minutos // 60:02d}:{minutos % 60:02d}"
 
     def carregarPropostas(self):
-        # Carrega propostas do arquivo e cria objetos Palestra
+        # Carrega propostas do arquivo e cria objetos da classe Palestra
         try:
             with open(self.filepath, 'r', encoding="UTF-8") as f:
                 for linha in f:
                     linha = linha.strip()
-                    if not linha: 
+                    if not linha:
                         continue
 
                     match = re.match(r"^(.*?)\s+(\d+min|lightning)$", linha)
@@ -43,87 +45,79 @@ class OrganizadorConferencia:
                     titulo_str, duracao_str = match.groups()
                     duracao = 5 if duracao_str == "lightning" else int(duracao_str.replace("min", ""))
                     self.propostas.append(Palestra(titulo_str.strip(), duracao))
-            
-            # Ordena palestras pela maior duração
+
             self.propostas.sort(key=lambda p: p.duracao, reverse=True)
+
         except FileNotFoundError:
-            print(f"Lista Palestra inexistente{self.filepath}")
+            print(f"Lista Palestra inexistente: {self.filepath}")
+
+    def agendarSessao(self, propostas, hora_inicio, hora_fim):
+        palestras_sessao = []
+        hora_atual = hora_inicio
+        restantes = []
+
+        for palestra in propostas:
+            if hora_atual + palestra.duracao <= hora_fim:
+                palestra.hora_inicio = hora_atual
+                palestras_sessao.append(palestra)
+                hora_atual += palestra.duracao
+            else:
+                restantes.append(palestra)
+
+        return palestras_sessao, restantes, hora_atual
 
     def agendar(self):
         nova_trilha_agendada = []
-        palestras_nao_agendadas = [] # Nova lista para coletar as não agendadas
-        
-        # Sessão da Manhã
-        palestrasManha = []
-        horaAtualManha = self.INICIO_MANHA
-        
-        # Itera sobre as propostas atuais (da lista self.propostas)
-        for palestra in self.propostas: 
-            if horaAtualManha + palestra.duracao <= self.FIM_MANHA:
-                palestra.hora_inicio = horaAtualManha
-                palestrasManha.append(palestra)
-                horaAtualManha += palestra.duracao
-            else:
-                palestras_nao_agendadas.append(palestra) # Adiciona à lista de não agendadas
-        
-        nova_trilha_agendada.append({"periodo": "manhã", "palestras": palestrasManha, "fimMinutos": horaAtualManha})
-        
-        # --- Sessão da Tarde ---
-        palestrasDaTarde = []
-        horaAtualTarde = self.HORA_DO_ALMOCO
-        propostas_apos_manha = list(palestras_nao_agendadas) # Agora, esta é a lista que sobra da manhã
-        palestras_nao_agendadas_apos_tarde = [] # Lista para as que não couberam na tarde
-        
-        for palestra in propostas_apos_manha: # Itera sobre o que não foi agendado na manhã
-            fimPotencial = horaAtualTarde + palestra.duracao
-            if fimPotencial <= self.FIM_NETWORKING:
-                palestra.hora_inicio = horaAtualTarde
-                palestrasDaTarde.append(palestra)
-                horaAtualTarde += palestra.duracao
-            else:
-                palestras_nao_agendadas_apos_tarde.append(palestra) # Não coube na tarde
-        nova_trilha_agendada.append({"periodo": "tarde", "palestras": palestrasDaTarde, "fimMinutos": horaAtualTarde})
- 
-        # Atualiza a lista de propostas globais com as que sobraram (não agendadas nesta trilha)
-        self.propostas = palestras_nao_agendadas_apos_tarde 
 
-        foiAgendadoNestaTrilha = (len(palestrasManha) > 0 or len(palestrasDaTarde) > 0)
-        return nova_trilha_agendada, foiAgendadoNestaTrilha
+        # Sessão da manhã
+        palestrasManha, restantesManha, fimManha = self.agendarSessao(self.propostas, self.INICIO_MANHA, self.FIM_MANHA)
+        nova_trilha_agendada.append({
+            "periodo": "manhã",
+            "palestras": palestrasManha,
+            "fimMinutos": fimManha
+        })
 
+        # Sessão da tarde
+        palestrasTarde, restantesTarde, fimTarde = self.agendarSessao(restantesManha, self.HORA_DO_ALMOCO, self.FIM_NETWORKING)
+        nova_trilha_agendada.append({
+            "periodo": "tarde",
+            "palestras": palestrasTarde,
+            "fimMinutos": fimTarde
+        })
+
+        # Atualiza propostas com as que sobraram
+        self.propostas = restantesTarde
+
+        foiAgendado = bool(palestrasManha or palestrasTarde)
+        return nova_trilha_agendada, foiAgendado
 
     def organizarConferencia(self):
-        # ordena a lista
         self.carregarPropostas()
-        
-        # Cria trilhas enquanto houver propostas
+
         while self.propostas:
             novaTrilha, agendado = self.agendar()
-            # Interrompe se nenhuma palestra for agendada e ainda houver propostas
-            if not agendado and self.propostas:
+            if not agendado:
                 print("Aviso: Nem todas as palestras puderam ser agendadas.")
                 break
-            self.cronograma.append(novaTrilha) # Adiciona a nova trilha
+            self.cronograma.append(novaTrilha)
 
     def imprimir(self):
-        # Imprime o cronograma final
         for i, trilha in enumerate(self.cronograma):
             print(f"\n---")
-            print(f"## Trilha {chr(65 + i)}:\n") # transforma numeros em  alfabeto usando ascii
-            
+            print(f"## Trilha {chr(65 + i)}:\n")  # transforma número em letra (A, B, C...)
+
             for sessao in trilha:
                 for palestra in sessao["palestras"]:
                     horaStr = self.minutosParaHora(palestra.hora_inicio)
                     duracaoDisplay = f"{palestra.duracao}min" if palestra.duracao != 5 else "lightning"
                     print(f"{horaStr} {palestra.titulo.strip()} {duracaoDisplay}")
-                
-                if sessao["periodo"] == "manhã": print("12:00 Almoço")
-                
-                if sessao["periodo"] == "tarde":
-                    fimUltimaPalestraMinutos = sessao["fimMinutos"]
-                    # Calcula o horário do networking
-                    horaNetworkingMinutos = max(fimUltimaPalestraMinutos, self.INICIO_NETWORKING)
-                    horaNetworkingMinutos = min(horaNetworkingMinutos, self.FIM_NETWORKING)
-                    print(f"{self.minutosParaHora(horaNetworkingMinutos)} Evento de Networking")
+
+                if sessao["periodo"] == "manhã":
+                    print("12:00 Almoço")
+                elif sessao["periodo"] == "tarde":
+                    horaNetworking = max(sessao["fimMinutos"], self.INICIO_NETWORKING)
+                    horaNetworking = min(horaNetworking, self.FIM_NETWORKING)
+                    print(f"{self.minutosParaHora(horaNetworking)} Evento de Networking")
 
 
 if __name__ == "__main__":
