@@ -1,7 +1,6 @@
 import re
 
 class Palestra:
-    # Classe da palestra
     def __init__(self, titulo, duracao_minutos):
         self.titulo = titulo
         self.duracao = duracao_minutos
@@ -29,65 +28,71 @@ class OrganizadorConferencia:
 
     def carregarPropostas(self):
         # Carrega propostas do arquivo e cria objetos Palestra
-        with open(self.filepath, 'r') as f:
-            for linha in f:
-                linha = linha.strip()
-                if not linha: 
-                    continue
+        try:
+            with open(self.filepath, 'r', encoding="UTF-8") as f:
+                for linha in f:
+                    linha = linha.strip()
+                    if not linha: 
+                        continue
 
-                match = re.match(r"^(.*?)\s+(\d+min|lightning)$", linha)
-                if not match:
-                    print(f"Erro ao ler linha: {linha}")
-                    continue
+                    match = re.match(r"^(.*?)\s+(\d+min|lightning)$", linha)
+                    if not match:
+                        print(f"Erro ao ler linha: {linha}")
+                        continue
 
-                titulo_str, duracao_str = match.groups()
-                duracao = 5 if duracao_str == "lightning" else int(duracao_str.replace("min", ""))
-                self.propostas.append(Palestra(titulo_str.strip(), duracao))
-        
-        # Ordena palestras pela maior duração
-        self.propostas.sort(key=lambda p: p.duracao, reverse=True)
+                    titulo_str, duracao_str = match.groups()
+                    duracao = 5 if duracao_str == "lightning" else int(duracao_str.replace("min", ""))
+                    self.propostas.append(Palestra(titulo_str.strip(), duracao))
+            
+            # Ordena palestras pela maior duração
+            self.propostas.sort(key=lambda p: p.duracao, reverse=True)
+        except FileNotFoundError:
+            print(f"Lista Palestra inexistente{self.filepath}")
 
     def agendar(self):
-        # Agenda palestras para uma nova trilha (manhã e tarde)
-        resultado = []
+        nova_trilha_agendada = []
+        palestras_nao_agendadas = [] # Nova lista para coletar as não agendadas
         
-        # --- Sessão da Manhã ---
+        # Sessão da Manhã
         palestrasManha = []
         horaAtualManha = self.INICIO_MANHA
-        propostasDisponiveisAtual = list(self.propostas) # Cópia para iteração segura
         
-        for palestra in propostasDisponiveisAtual:
-            # Verifica se a palestra cabe na sessão
+        # Itera sobre as propostas atuais (da lista self.propostas)
+        for palestra in self.propostas: 
             if horaAtualManha + palestra.duracao <= self.FIM_MANHA:
-                palestra.hora_inicio = horaAtualManha # Define hora de início
+                palestra.hora_inicio = horaAtualManha
                 palestrasManha.append(palestra)
-                horaAtualManha += palestra.duracao # Avança o tempo
-                self.propostas.remove(palestra) # Remove da lista principal
+                horaAtualManha += palestra.duracao
+            else:
+                palestras_nao_agendadas.append(palestra) # Adiciona à lista de não agendadas
         
-        resultado.append({"periodo": "manhã", "palestras": palestrasManha, "fimMinutos": horaAtualManha})
+        nova_trilha_agendada.append({"periodo": "manhã", "palestras": palestrasManha, "fimMinutos": horaAtualManha})
         
-        # Sessão da Tarde XD
+        # --- Sessão da Tarde ---
         palestrasDaTarde = []
         horaAtualTarde = self.HORA_DO_ALMOCO
-        propostasDisponiveisAtual = list(self.propostas) # Nova cópia
+        propostas_apos_manha = list(palestras_nao_agendadas) # Agora, esta é a lista que sobra da manhã
+        palestras_nao_agendadas_apos_tarde = [] # Lista para as que não couberam na tarde
         
-        for palestra in propostasDisponiveisAtual:
+        for palestra in propostas_apos_manha: # Itera sobre o que não foi agendado na manhã
             fimPotencial = horaAtualTarde + palestra.duracao
-            # Verifica se a palestra cabe na sessão e antes do fim do networking
             if fimPotencial <= self.FIM_NETWORKING:
                 palestra.hora_inicio = horaAtualTarde
                 palestrasDaTarde.append(palestra)
                 horaAtualTarde += palestra.duracao
-                self.propostas.remove(palestra)
-        
-        resultado.append({"periodo": "tarde", "palestras": palestrasDaTarde, "fimMinutos": horaAtualTarde})
-        
-        # Retorna a trilha e um flag se algo foi agendado
+            else:
+                palestras_nao_agendadas_apos_tarde.append(palestra) # Não coube na tarde
+        nova_trilha_agendada.append({"periodo": "tarde", "palestras": palestrasDaTarde, "fimMinutos": horaAtualTarde})
+ 
+        # Atualiza a lista de propostas globais com as que sobraram (não agendadas nesta trilha)
+        self.propostas = palestras_nao_agendadas_apos_tarde 
+
         foiAgendadoNestaTrilha = (len(palestrasManha) > 0 or len(palestrasDaTarde) > 0)
-        return resultado, foiAgendadoNestaTrilha
+        return nova_trilha_agendada, foiAgendadoNestaTrilha
+
 
     def organizarConferencia(self):
-        # Orquestra o processo de organização
+        # ordena a lista
         self.carregarPropostas()
         
         # Cria trilhas enquanto houver propostas
@@ -103,7 +108,7 @@ class OrganizadorConferencia:
         # Imprime o cronograma final
         for i, trilha in enumerate(self.cronograma):
             print(f"\n---")
-            print(f"## Trilha {chr(65 + i)}:\n") # A, B, C...
+            print(f"## Trilha {chr(65 + i)}:\n") # transforma numeros em  alfabeto usando ascii
             
             for sessao in trilha:
                 for palestra in sessao["palestras"]:
